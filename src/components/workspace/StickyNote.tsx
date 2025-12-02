@@ -41,6 +41,7 @@ export function StickyNote({
 }: StickyNoteProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [hasMoved, setHasMoved] = useState(false);
   const noteRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef({ x: 0, y: 0 });
   const initialPos = useRef({ x: 0, y: 0 });
@@ -53,9 +54,18 @@ export function StickyNote({
       return;
     }
     
+    // If we're in connecting mode and this isn't the source note, complete the connection
+    if (isConnecting && !isConnectingFrom) {
+      e.preventDefault();
+      e.stopPropagation();
+      onCompleteConnection(note.id);
+      return;
+    }
+    
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
+    setHasMoved(false);
     onBringToFront(note.id);
     
     dragStart.current = { x: e.clientX, y: e.clientY };
@@ -69,6 +79,11 @@ export function StickyNote({
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - dragStart.current.x;
       const deltaY = e.clientY - dragStart.current.y;
+      
+      // Check if actually moved (to distinguish from click)
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        setHasMoved(true);
+      }
       
       // Get the current zoom level from the parent transform
       const canvas = document.querySelector('.canvas-content') as HTMLElement | null;
@@ -95,22 +110,11 @@ export function StickyNote({
     };
   }, [isDragging, note.id, onPositionChange]);
 
-  // Handle connection click
-  const handleConnectionClick = (e: React.MouseEvent) => {
+  // Handle starting a connection
+  const handleStartConnection = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
-    if (isConnecting && !isConnectingFrom) {
-      onCompleteConnection(note.id);
-    } else if (!isConnecting) {
-      onStartConnection(note.id);
-    }
-  };
-
-  // Handle click on note when connecting
-  const handleNoteClick = (e: React.MouseEvent) => {
-    if (isConnecting && !isConnectingFrom) {
-      e.stopPropagation();
-      onCompleteConnection(note.id);
-    }
+    onStartConnection(note.id);
   };
 
   return (
@@ -120,8 +124,8 @@ export function StickyNote({
         'sticky-note paper-texture absolute select-none',
         colorClasses[note.color],
         isDragging && 'dragging',
-        isConnectingFrom && 'ring-2 ring-primary ring-offset-2',
-        isConnecting && !isConnectingFrom && 'hover:ring-2 hover:ring-primary/50 cursor-pointer',
+        isConnectingFrom && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+        isConnecting && !isConnectingFrom && 'ring-2 ring-primary/30 hover:ring-primary cursor-pointer',
         'animate-pop-in'
       )}
       style={{
@@ -132,8 +136,23 @@ export function StickyNote({
         zIndex: note.zIndex,
       }}
       onMouseDown={handleMouseDown}
-      onClick={handleNoteClick}
     >
+      {/* Connection target overlay - shows when connecting */}
+      {isConnecting && !isConnectingFrom && (
+        <div 
+          className="absolute inset-0 z-30 flex items-center justify-center bg-primary/10 rounded-sm"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onCompleteConnection(note.id);
+          }}
+        >
+          <div className="bg-primary text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium">
+            Click to connect
+          </div>
+        </div>
+      )}
+
       {/* Fold effect */}
       <div className="absolute top-0 right-0 w-8 h-8 overflow-hidden pointer-events-none">
         <div 
@@ -144,7 +163,7 @@ export function StickyNote({
       {/* Toolbar */}
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 hover:opacity-100 transition-opacity z-10">
         <button
-          onClick={handleConnectionClick}
+          onClick={handleStartConnection}
           className={cn(
             'p-1.5 rounded-md bg-foreground/10 hover:bg-foreground/20 transition-colors',
             isConnectingFrom && 'bg-primary text-primary-foreground'
@@ -204,7 +223,8 @@ export function StickyNote({
         className={cn(
           'w-full h-full p-4 pt-8 bg-transparent resize-none outline-none',
           'text-foreground/90 placeholder:text-foreground/40',
-          'font-medium text-sm leading-relaxed'
+          'font-medium text-sm leading-relaxed',
+          isConnecting && !isConnectingFrom && 'pointer-events-none'
         )}
         onClick={(e) => e.stopPropagation()}
       />

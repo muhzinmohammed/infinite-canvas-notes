@@ -54,9 +54,13 @@ export function Canvas({
     onAddNote({ x: x - 100, y: y - 100 }); // Center the note on click
   };
 
-  // Handle mouse down for panning
+  // Handle mouse down for panning - now works with simple left click on canvas
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    // Only start panning if clicking directly on canvas (not on notes)
+    const isCanvas = (e.target as HTMLElement) === canvasRef.current || 
+                     (e.target as HTMLElement).classList.contains('canvas-content');
+    
+    if (e.button === 0 && isCanvas) {
       e.preventDefault();
       setIsPanning(true);
       setPanStart({ x: e.clientX - viewport.x, y: e.clientY - viewport.y });
@@ -130,7 +134,7 @@ export function Canvas({
       className={cn(
         'fixed inset-0 overflow-hidden',
         backgroundClass,
-        isPanning ? 'cursor-grabbing' : 'cursor-default',
+        isPanning ? 'cursor-grabbing' : 'cursor-grab',
         connectingFrom && 'cursor-crosshair'
       )}
       onDoubleClick={handleDoubleClick}
@@ -138,17 +142,20 @@ export function Canvas({
     >
       {/* Viewport container */}
       <div
+        className="canvas-content absolute inset-0"
         style={{
-          transform: `translate(${viewport.x}px, ${viewport.y}px)`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
           transformOrigin: '0 0',
         }}
       >
         {/* SVG layer for connections */}
         <svg
-          className="absolute inset-0 pointer-events-none"
+          className="absolute pointer-events-none"
           style={{
-            width: '100vw',
-            height: '100vh',
+            width: '10000px',
+            height: '10000px',
+            left: '-5000px',
+            top: '-5000px',
             overflow: 'visible',
           }}
         >
@@ -178,7 +185,6 @@ export function Canvas({
             onDelete={onDeleteNote}
             onStartConnection={onStartConnection}
             onCompleteConnection={onCompleteConnection}
-            viewport={viewport}
           />
         ))}
       </div>

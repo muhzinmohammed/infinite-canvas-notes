@@ -14,7 +14,6 @@ interface StickyNoteProps {
   onDelete: (id: string) => void;
   onStartConnection: (id: string) => void;
   onCompleteConnection: (id: string) => void;
-  viewport: { x: number; y: number; zoom: number };
 }
 
 const colorClasses: Record<StickyColor, string> = {
@@ -39,32 +38,28 @@ export function StickyNote({
   onDelete,
   onStartConnection,
   onCompleteConnection,
-  viewport,
 }: StickyNoteProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const noteRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
+  const dragStart = useRef({ x: 0, y: 0 });
+  const initialPos = useRef({ x: 0, y: 0 });
 
   // Handle mouse down for dragging
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Don't start drag if clicking on textarea or buttons
     if ((e.target as HTMLElement).tagName === 'TEXTAREA' || 
         (e.target as HTMLElement).closest('button')) {
       return;
     }
     
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(true);
     onBringToFront(note.id);
     
-    const rect = noteRef.current?.getBoundingClientRect();
-    if (rect) {
-      dragOffset.current = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-      };
-    }
+    dragStart.current = { x: e.clientX, y: e.clientY };
+    initialPos.current = { x: note.position.x, y: note.position.y };
   };
 
   // Handle mouse move for dragging
@@ -72,8 +67,18 @@ export function StickyNote({
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const newX = (e.clientX - viewport.x - dragOffset.current.x) / viewport.zoom;
-      const newY = (e.clientY - viewport.y - dragOffset.current.y) / viewport.zoom;
+      const deltaX = e.clientX - dragStart.current.x;
+      const deltaY = e.clientY - dragStart.current.y;
+      
+      // Get the current zoom level from the parent transform
+      const canvas = document.querySelector('.canvas-content') as HTMLElement | null;
+      const transform = canvas?.style?.transform || '';
+      const scaleMatch = transform.match(/scale\(([^)]+)\)/);
+      const zoom = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+      
+      const newX = initialPos.current.x + deltaX / zoom;
+      const newY = initialPos.current.y + deltaY / zoom;
+      
       onPositionChange(note.id, { x: newX, y: newY });
     };
 
@@ -88,14 +93,23 @@ export function StickyNote({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, note.id, onPositionChange, viewport]);
+  }, [isDragging, note.id, onPositionChange]);
 
   // Handle connection click
-  const handleConnectionClick = () => {
+  const handleConnectionClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (isConnecting && !isConnectingFrom) {
       onCompleteConnection(note.id);
     } else if (!isConnecting) {
       onStartConnection(note.id);
+    }
+  };
+
+  // Handle click on note when connecting
+  const handleNoteClick = (e: React.MouseEvent) => {
+    if (isConnecting && !isConnectingFrom) {
+      e.stopPropagation();
+      onCompleteConnection(note.id);
     }
   };
 
@@ -107,7 +121,7 @@ export function StickyNote({
         colorClasses[note.color],
         isDragging && 'dragging',
         isConnectingFrom && 'ring-2 ring-primary ring-offset-2',
-        isConnecting && !isConnectingFrom && 'hover:ring-2 hover:ring-primary/50',
+        isConnecting && !isConnectingFrom && 'hover:ring-2 hover:ring-primary/50 cursor-pointer',
         'animate-pop-in'
       )}
       style={{
@@ -116,13 +130,12 @@ export function StickyNote({
         width: note.width,
         height: note.height,
         zIndex: note.zIndex,
-        transform: `scale(${viewport.zoom})`,
-        transformOrigin: 'top left',
       }}
       onMouseDown={handleMouseDown}
+      onClick={handleNoteClick}
     >
       {/* Fold effect */}
-      <div className="absolute top-0 right-0 w-8 h-8 overflow-hidden">
+      <div className="absolute top-0 right-0 w-8 h-8 overflow-hidden pointer-events-none">
         <div 
           className="absolute top-0 right-0 w-12 h-12 bg-foreground/5 transform rotate-45 translate-x-6 -translate-y-6"
         />
@@ -141,14 +154,20 @@ export function StickyNote({
           <Link2 className="w-3.5 h-3.5" />
         </button>
         <button
-          onClick={() => setShowColorPicker(!showColorPicker)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowColorPicker(!showColorPicker);
+          }}
           className="p-1.5 rounded-md bg-foreground/10 hover:bg-foreground/20 transition-colors"
           title="Change color"
         >
           <Palette className="w-3.5 h-3.5" />
         </button>
         <button
-          onClick={() => onDelete(note.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(note.id);
+          }}
           className="p-1.5 rounded-md bg-foreground/10 hover:bg-destructive/80 hover:text-destructive-foreground transition-colors"
           title="Delete note"
         >
@@ -167,7 +186,8 @@ export function StickyNote({
                 colorClasses[color],
                 note.color === color && 'ring-2 ring-foreground ring-offset-1'
               )}
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 onColorChange(note.id, color);
                 setShowColorPicker(false);
               }}
@@ -178,7 +198,6 @@ export function StickyNote({
 
       {/* Content */}
       <textarea
-        ref={textareaRef}
         value={note.content}
         onChange={(e) => onContentChange(note.id, e.target.value)}
         placeholder="Write something..."
@@ -187,7 +206,7 @@ export function StickyNote({
           'text-foreground/90 placeholder:text-foreground/40',
           'font-medium text-sm leading-relaxed'
         )}
-        style={{ cursor: isDragging ? 'grabbing' : 'text' }}
+        onClick={(e) => e.stopPropagation()}
       />
     </div>
   );
